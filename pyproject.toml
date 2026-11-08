@@ -1,0 +1,13 @@
+[project]
+name = "olmes-measure"
+version = "0.1.0"
+description = "Measure a language model on AI2's OLMES suites, reading only the requests that the suites' scores use"
+requires-python = ">=3.10"
+dependencies = ["numpy"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["olmes_measure"]
