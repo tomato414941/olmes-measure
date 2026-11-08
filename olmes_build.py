@@ -4,7 +4,9 @@ olmes_measure.py selects from. It runs where OLMES is installed at REVISION, as 
 The artifact holds, for each task of the suites, OLMES's requests as its runner writes them (requests/ALIAS.jsonl.gz),
 the task's configuration as the runner resolves it (tasks.json), and how the suites average their tasks (suites.json).
 Requests do not depend on a model; OLMES reads all of a task's few-shot source for every question, so building takes
-time that grows with the square of a task's size, and the tasks are shared among processes.
+time that grows with the square of a task's size, and the tasks are shared among processes. Once the tasks' data are
+in the Hugging Face cache, HF_HUB_OFFLINE=1 and HF_DATASETS_OFFLINE=1 build without asking the Hub, which refuses a
+machine that asks too often, and in a few minutes.
 
     python olmes_build.py OUT SUITE... [--workers N]
 """
