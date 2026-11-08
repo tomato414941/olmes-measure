@@ -59,9 +59,10 @@ def task_alias(task_config):
 
 def suite_groups(suites):
     """The groups that OLMES's aggregation averages for the suites, the suites among them, each with its members: tasks,
-    or groups. Every group takes the macro average of its members. A suite that a group holds and that OLMES's
-    aggregation has no rule for, such as ARC's two tasks in the QA suites, gets no score from OLMES, so it takes the
-    macro average too."""
+    or groups, in the order of their names, since OLMES keeps some groups' members in a set, whose order changes from
+    one run to the next. Every group takes the macro average of its members. A suite that a group holds and that
+    OLMES's aggregation has no rule for, such as ARC's two tasks in the QA suites, gets no score from OLMES, so it
+    takes the macro average too."""
     from oe_eval.configs.task_suites import TASK_SUITE_CONFIGS
     from oe_eval.tasks import aggregate_tasks
 
@@ -73,7 +74,7 @@ def suite_groups(suites):
             group = {"tasks": TASK_SUITE_CONFIGS[name]["tasks"], "primary_metric": "macro"}
         if group["primary_metric"] != "macro":
             raise ValueError(f"{name} takes the {group['primary_metric']} average, which olmes_measure does not")
-        groups[name] = list(group["tasks"])
+        groups[name] = sorted(group["tasks"])
         for member in groups[name]:
             if member in aggregate_tasks.TASK_GROUPS or member in TASK_SUITE_CONFIGS:
                 add(member)

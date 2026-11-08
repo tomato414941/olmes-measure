@@ -177,7 +177,7 @@ class RowsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             tokenizer = Tokenizer(models.BPE())
-            tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel()
+            tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
             tokenizer.train_from_iterator(["the cat sat on the mat"] * 10, trainers.BpeTrainer(vocab_size=300))
             tokenizer.save(str(directory / "tokenizer.json"))
             requests = make_requests(directory, {"t": ({"primary_metric": "acc_raw"}, multiple_choice([1, 0]))},

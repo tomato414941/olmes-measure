@@ -110,7 +110,8 @@ class RowsFidelityTest(unittest.TestCase):
 
         texts = ["The cat sat on the mat. Ünïcödé text, with numbers 12345.", "Another document; café au lait."] * 20
         tokenizer = Tokenizer(models.BPE())
-        tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel()
+        # Without a space added before the text, which transformers' wrapping of the tokenizer would not add.
+        tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
         tokenizer.train_from_iterator(texts, trainers.BpeTrainer(vocab_size=300, special_tokens=["<|bos|>"]))
         bos = tokenizer.token_to_id("<|bos|>")
         fast = transformers.PreTrainedTokenizerFast(tokenizer_object=tokenizer, bos_token="<|bos|>")
