@@ -144,6 +144,37 @@ class SelectTest(ArtifactTest):
         self.assertEqual(self.selected(["bpb"])[0], first)
         self.assertNotEqual(self.selected(["bpb"], per_task=2)[0], first)
 
+    def test_a_reserve_holds_other_questions_of_each_task_and_no_task_without_any(self):
+        selection, (_, _, taken) = self.selected(["bpb", "rc"], per_task=3, seed=4)
+        aside = om.reserve(self.requests, selection, self.directory / "selections", per_task=2)
+        self.assertTrue(om.is_reserve(aside))
+        self.assertFalse(om.is_reserve(selection))
+        self.assertEqual(om.check(aside)["reserve_of"], selection.name)
+        groups, metrics, tasks = om.read_selection(aside)
+        ids = lambda questions: [question["doc_id"] for question in questions]
+        # quiz has six questions, three of them selected: two of the other three; pick, words and last have no other
+        self.assertEqual(sorted(tasks), ["quiz:bpb", "quiz:rc"])
+        self.assertEqual(groups, {"bpb": ["inner"], "inner": ["quiz:bpb"], "rc": ["quiz:rc"]})
+        for alias in tasks:
+            self.assertEqual(len(tasks[alias]), 2)
+            self.assertFalse(set(ids(tasks[alias])) & set(ids(taken[alias])))
+        self.assertEqual(ids(tasks["quiz:bpb"]), ids(tasks["quiz:rc"]))  # the same for tasks that ask the same
+        self.assertEqual(len(tasks["quiz:rc"][0]["pairs"]), 3)  # as a selection holds them
+        self.assertEqual(om.reserve(self.requests, selection, self.directory / "selections", per_task=2), aside)
+        with self.assertRaises(ValueError):
+            om.reserve(selection, selection, self.directory / "selections", per_task=2)
+
+    def test_a_selections_questions_are_found_in_a_larger_one_by_where_they_stand_there(self):
+        whole, (_, _, every) = self.selected(["bpb", "rc"])
+        part, (_, _, some) = self.selected(["bpb"], per_task=3, seed=4)
+        found = om.within(whole, part)
+        self.assertEqual(sorted(found), ["quiz:bpb", "words:bpb"])  # the tasks that both hold
+        for alias, indices in found.items():
+            self.assertEqual([every[alias][at]["doc_id"] for at in indices], [q["doc_id"] for q in some[alias]])
+            self.assertEqual([every[alias][at]["pairs"] for at in indices], [q["pairs"] for q in some[alias]])
+        with self.assertRaises(ValueError):
+            om.within(part, whole)  # the smaller one does not hold the larger one's questions
+
     def test_refuses_a_metric_that_it_does_not_compute(self):
         tasks = {"odd": ({"task_name": "odd", "primary_metric": "f1"}, [request(0, 0, 0, " a")])}
         requests = make_requests(self.directory, tasks, {"suite": ["odd"]})

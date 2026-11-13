@@ -6,6 +6,8 @@ every request of some suites as a requests artifact. Everything here works from 
 
 - select: the questions of some suites, each with only the requests that its task's score reads (the correct answer
   alone for bits per byte, every choice for accuracy), or a fixed random share of each task's questions;
+- reserve: a selection of the questions that another selection does not hold, to be kept aside from decisions;
+- within: where a selection's questions stand in a larger one, so that a result on the larger scores the smaller;
 - rows: a selection's requests in a tokenizer, as OLMES's Hugging Face wrapper gives them to a model;
 - score: each task's and each suite's score, as OLMES computes them, from a model's logits on those rows.
 
@@ -13,6 +15,7 @@ An artifact is a directory with manifest.json: what it was made from and the SHA
 by its kind and the start of the SHA-256 of its manifest, so that equal artifacts have equal names whoever made them.
 
     python olmes_measure.py select REQUESTS OUT SUITE... [--per-task N] [--seed S]
+    python olmes_measure.py reserve REQUESTS SELECTION OUT --per-task N [--seed S]
     python olmes_measure.py rows SELECTION OUT TOKENIZER_JSON BOS
     python olmes_measure.py check ARTIFACT...
 """
@@ -168,6 +171,66 @@ def select(requests, out, suites, per_task=None, seed=0):
     (work / "tasks.json").write_text(json.dumps(metrics, indent=1))
     share = {"per_task": per_task, "seed": seed} if per_task is not None else {}
     return seal(work, "selection", requests=requests.name, olmes=made["olmes"], suites=sorted(suites), **share)
+
+
+def reserve(requests, selection, out, per_task, seed=1):
+    """A selection of questions that `selection` does not hold, from the requests that it was made from: of each of
+    its tasks, a fixed random `per_task` of the task's other questions (all of them, if they are fewer), the same for
+    tasks that ask the same. A task without another question is left out, and so is a group that then holds none."""
+    made = check(selection)
+    if made["requests"] != Path(requests).name:
+        raise ValueError(f"{selection} was made from {made['requests']}")
+    selection, out = Path(selection), Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    groups = json.loads((selection / "suites.json").read_text())
+    metrics = json.loads((selection / "tasks.json").read_text())
+    work = Path(tempfile.mkdtemp(dir=out))
+    (work / "tasks").mkdir()
+    with tempfile.TemporaryDirectory(dir=out) as staging:
+        whole = select(requests, staging, made["suites"])  # every question, as a selection holds them
+        for alias in sorted(metrics):
+            with open(selection / "tasks" / f"{alias}.jsonl", encoding="utf-8") as lines:
+                taken = {json.loads(line)["doc_id"] for line in lines}
+            with open(whole / "tasks" / f"{alias}.jsonl", encoding="utf-8") as lines:
+                others = [(json.loads(line)["doc_id"], line) for line in lines]
+            others = [(doc_id, line) for doc_id, line in others if doc_id not in taken]
+            if per_task < len(others):  # chosen by the questions that are left, which tasks that ask the same share
+                left = hashlib.sha256(json.dumps([doc_id for doc_id, _ in others]).encode()).hexdigest()
+                others = [others[k] for k in sorted(random.Random(f"{seed}:{left}").sample(range(len(others)),
+                                                                                       per_task))]
+            if others:
+                (work / "tasks" / f"{alias}.jsonl").write_text("".join(line for _, line in others), encoding="utf-8")
+    kept = {alias: metric for alias, metric in metrics.items() if (work / "tasks" / f"{alias}.jsonl").exists()}
+
+    def holds(name):
+        return any(holds(member) for member in groups[name]) if name in groups else name in kept
+
+    pruned = {name: [member for member in members if holds(member)] for name, members in groups.items() if holds(name)}
+    (work / "suites.json").write_text(json.dumps(pruned, indent=1))
+    (work / "tasks.json").write_text(json.dumps(kept, indent=1))
+    return seal(work, "selection", requests=made["requests"], olmes=made["olmes"], suites=made["suites"],
+                reserve_of=selection.name, per_task=per_task, seed=seed)
+
+
+def is_reserve(selection):
+    """Whether a selection was made by `reserve`: of the questions that another one does not hold."""
+    return "reserve_of" in json.loads((Path(selection) / "manifest.json").read_text())
+
+
+def within(whole, part):
+    """Where each question of the selection `part` stands among the questions of the selection `whole`, for every
+    task that both hold: {task: [index in the whole's task]}. A result on the whole, question by question, then
+    scores the part: its questions' log-likelihoods are the whole's at these indices."""
+    _, _, larger = read_selection(whole)
+    _, _, smaller = read_selection(part)
+    found = {}
+    for alias in sorted(set(larger) & set(smaller)):
+        index = {question["doc_id"]: at for at, question in enumerate(larger[alias])}
+        missing = [question["doc_id"] for question in smaller[alias] if question["doc_id"] not in index]
+        if missing:
+            raise ValueError(f"{alias}: {whole} does not hold {len(missing)} questions of {part}")
+        found[alias] = [index[question["doc_id"]] for question in smaller[alias]]
+    return found
 
 
 def read_selection(selection):
@@ -377,11 +440,19 @@ def main():
     encoded.add_argument("out")
     encoded.add_argument("tokenizer")
     encoded.add_argument("bos", type=int)
+    aside = commands.add_parser("reserve")
+    aside.add_argument("requests")
+    aside.add_argument("selection")
+    aside.add_argument("out")
+    aside.add_argument("--per-task", type=int, required=True)
+    aside.add_argument("--seed", type=int, default=1)
     checked = commands.add_parser("check")
     checked.add_argument("artifacts", nargs="+")
     args = parser.parse_args()
     if args.command == "select":
         print(select(args.requests, args.out, args.suites, args.per_task, args.seed))
+    elif args.command == "reserve":
+        print(reserve(args.requests, args.selection, args.out, args.per_task, args.seed))
     elif args.command == "rows":
         print(rows(args.selection, args.out, args.tokenizer, args.bos))
     else:

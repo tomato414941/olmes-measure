@@ -1,0 +1,189 @@
+{
+ "olmes": {
+  "revision": "5a51f502d463b8cdc4a2dcad7d7096c41ff1197e",
+  "requests": "requests-74552645d81c7ad6",
+  "suites": [
+   "olmo3:base_easy:qa_bpb",
+   "olmo3:base_easy:math_bpb",
+   "olmo3:base_easy:code_bpb"
+  ],
+  "selection": "selection-e7262d6cf354f75d"
+ },
+ "paloma": {
+  "repository": "allenai/paloma",
+  "revision": "65cd6fc59dba021b21db414fa5e8d7765ffbe5e6",
+  "split": "val",
+  "whole": "paloma-val-2b60e4850e11cb21",
+  "text": "paloma-val-2b60e4850e11cb21"
+ },
+ "overlap": {
+  "paloma": {
+   "val": "paloma-val-2b60e4850e11cb21",
+   "test": "paloma-test-dcd7bc459cd70f37"
+  },
+  "artifact": "overlap-d319f14ab907c38d"
+ },
+ "categories": {
+  "stem_qa": {
+   "olmes": [
+    "arc:rc:bpb::olmes:full",
+    {
+     "mmlu_stem": [
+      "mmlu_abstract_algebra:rc:bpb::olmes",
+      "mmlu_astronomy:rc:bpb::olmes",
+      "mmlu_college_biology:rc:bpb::olmes",
+      "mmlu_college_chemistry:rc:bpb::olmes",
+      "mmlu_college_computer_science:rc:bpb::olmes",
+      "mmlu_college_mathematics:rc:bpb::olmes",
+      "mmlu_college_physics:rc:bpb::olmes",
+      "mmlu_computer_security:rc:bpb::olmes",
+      "mmlu_conceptual_physics:rc:bpb::olmes",
+      "mmlu_electrical_engineering:rc:bpb::olmes",
+      "mmlu_elementary_mathematics:rc:bpb::olmes",
+      "mmlu_high_school_biology:rc:bpb::olmes",
+      "mmlu_high_school_chemistry:rc:bpb::olmes",
+      "mmlu_high_school_computer_science:rc:bpb::olmes",
+      "mmlu_high_school_mathematics:rc:bpb::olmes",
+      "mmlu_high_school_physics:rc:bpb::olmes",
+      "mmlu_high_school_statistics:rc:bpb::olmes",
+      "mmlu_machine_learning:rc:bpb::olmes"
+     ]
+    },
+    "medmcqa:rc:bpb::none",
+    "medqa_en:rc:bpb::none",
+    "sciq:rc:bpb::olmo3",
+    "lab_bench_dbqa:bpb",
+    "lab_bench_protocolqa:bpb",
+    "qasper_yesno:rc:bpb::olmes",
+    "sciriff_yesno:rc:bpb::olmes"
+   ]
+  },
+  "nonstem_qa": {
+   "olmes": [
+    {
+     "mmlu_humanities": [
+      "mmlu_formal_logic:rc:bpb::olmes",
+      "mmlu_high_school_european_history:rc:bpb::olmes",
+      "mmlu_high_school_us_history:rc:bpb::olmes",
+      "mmlu_high_school_world_history:rc:bpb::olmes",
+      "mmlu_international_law:rc:bpb::olmes",
+      "mmlu_jurisprudence:rc:bpb::olmes",
+      "mmlu_logical_fallacies:rc:bpb::olmes",
+      "mmlu_moral_disputes:rc:bpb::olmes",
+      "mmlu_moral_scenarios:rc:bpb::olmes",
+      "mmlu_philosophy:rc:bpb::olmes",
+      "mmlu_prehistory:rc:bpb::olmes",
+      "mmlu_professional_law:rc:bpb::olmes",
+      "mmlu_world_religions:rc:bpb::olmes"
+     ]
+    },
+    {
+     "mmlu_social_sciences": [
+      "mmlu_econometrics:rc:bpb::olmes",
+      "mmlu_high_school_geography:rc:bpb::olmes",
+      "mmlu_high_school_government_and_politics:rc:bpb::olmes",
+      "mmlu_high_school_macroeconomics:rc:bpb::olmes",
+      "mmlu_high_school_microeconomics:rc:bpb::olmes",
+      "mmlu_high_school_psychology:rc:bpb::olmes",
+      "mmlu_human_sexuality:rc:bpb::olmes",
+      "mmlu_professional_psychology:rc:bpb::olmes",
+      "mmlu_public_relations:rc:bpb::olmes",
+      "mmlu_security_studies:rc:bpb::olmes",
+      "mmlu_sociology:rc:bpb::olmes",
+      "mmlu_us_foreign_policy:rc:bpb::olmes"
+     ]
+    },
+    {
+     "mmlu_other": [
+      "mmlu_anatomy:rc:bpb::olmes",
+      "mmlu_business_ethics:rc:bpb::olmes",
+      "mmlu_clinical_knowledge:rc:bpb::olmes",
+      "mmlu_college_medicine:rc:bpb::olmes",
+      "mmlu_global_facts:rc:bpb::olmes",
+      "mmlu_human_aging:rc:bpb::olmes",
+      "mmlu_management:rc:bpb::olmes",
+      "mmlu_marketing:rc:bpb::olmes",
+      "mmlu_medical_genetics:rc:bpb::olmes",
+      "mmlu_miscellaneous:rc:bpb::olmes",
+      "mmlu_nutrition:rc:bpb::olmes",
+      "mmlu_professional_accounting:rc:bpb::olmes",
+      "mmlu_professional_medicine:rc:bpb::olmes",
+      "mmlu_virology:rc:bpb::olmes"
+     ]
+    },
+    "csqa:rc:bpb::olmes:full",
+    "piqa:rc:bpb::olmes:full",
+    "socialiqa:rc:bpb::olmes:full",
+    "coqa:rc:bpb::gen2mc:xlarge",
+    "drop:rc:bpb::gen2mc:xlarge",
+    "jeopardy:rc:bpb::gen2mc:xlarge",
+    "naturalqs:rc:bpb::gen2mc:xlarge",
+    "squad:rc:bpb::gen2mc:xlarge"
+   ]
+  },
+  "gen_qa": {
+   "olmes": [
+    "hellaswag:rc:bpb::olmes:full",
+    "winogrande:rc:bpb::olmes:full",
+    "lambada:bpb",
+    "basic_skills:rc:bpb::olmes"
+   ]
+  },
+  "math": {
+   "olmes": [
+    "olmo3:base_easy:math_bpb"
+   ]
+  },
+  "code": {
+   "olmes": [
+    "olmo3:base_easy:code_bpb"
+   ]
+  },
+  "web": {
+   "paloma": [
+    "c4_en",
+    "mc4",
+    "falcon-refinedweb",
+    "c4_100_domains",
+    "dolma-v1_5/common-crawl",
+    "redpajama/c4",
+    "redpajama/commoncrawl"
+   ]
+  },
+  "encyclopedia": {
+   "paloma": [
+    "wikitext_103",
+    "m2d2_wikipedia_unsplit",
+    "dolma-v1_5/wiki",
+    "redpajama/wikipedia"
+   ]
+  },
+  "papers": {
+   "paloma": [
+    "m2d2_s2orc_unsplit",
+    "dolma-v1_5/pes2o",
+    "redpajama/arxiv"
+   ]
+  },
+  "posts": {
+   "paloma": [
+    "dolma_100_subreddits",
+    "dolma-v1_5/reddit_uniform",
+    "twitterAAE_HELM_fixed",
+    "redpajama/stackexchange"
+   ]
+  },
+  "books": {
+   "paloma": [
+    "dolma-v1_5/books",
+    "redpajama/books"
+   ]
+  },
+  "news": {
+   "paloma": [
+    "ptb"
+   ]
+  }
+ },
+ "compare": "mean_rate"
+}

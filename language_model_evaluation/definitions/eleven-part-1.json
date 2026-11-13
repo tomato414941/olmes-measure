@@ -1,0 +1,32 @@
+{
+ "within": "eleven-1",
+ "olmes": {
+  "selected": [
+   "olmo3:base_easy:qa_bpb",
+   "olmo3:base_easy:math_bpb",
+   "olmo3:base_easy:code_bpb",
+   "olmo3:base_easy:qa_rc"
+  ],
+  "per_task": 100,
+  "seed": 0,
+  "selection": "selection-05cd62cea5a690b1",
+  "reserve": {
+   "per_task": 100,
+   "seed": 1,
+   "selection": "selection-3932ab426d85aebc"
+  }
+ },
+ "paloma": {
+  "part": {
+   "member_bytes": 400000,
+   "domain_bytes": 24000,
+   "document_bytes": 8000
+  },
+  "text": "paloma-val-sample-0ee493497ff12446",
+  "reserve": {
+   "split": "test",
+   "whole": "paloma-test-dcd7bc459cd70f37",
+   "text": "paloma-test-sample-67d8307ccfdc815a"
+  }
+ }
+}

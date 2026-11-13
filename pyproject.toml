@@ -1,9 +1,12 @@
 [project]
-name = "olmes-measure"
-version = "0.1.0"
-description = "Measure a language model on AI2's OLMES suites, reading only the requests that the suites' scores use"
+name = "language-model-evaluation"
+version = "0.2.0"
+description = "What the language-model projects share of their evaluations: tools that measure OLMES and Paloma as published and find the text that overlaps them, and the evaluation definitions that projects adopt"
 requires-python = ">=3.10"
-dependencies = ["numpy"]
+dependencies = ["numpy", "pyahocorasick>=2.1"]
+
+[project.optional-dependencies]
+fetch = ["huggingface_hub"]  # to fetch Paloma's text
 
 [build-system]
 requires = ["setuptools>=61"]
@@ -11,3 +14,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 py-modules = ["olmes_measure"]
+packages = ["language_model_evaluation"]
+
+[tool.setuptools.package-data]
+language_model_evaluation = ["definitions/*.json"]
