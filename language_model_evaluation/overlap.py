@@ -5,7 +5,8 @@ model learns from, what an index holds and what a tokenizer is made from. A docu
 
 - a question of OLMES's suites, found by its middle characters: the WIDTH characters in the middle of the question's
   letters and digits (without case, marks and space), when the document's own letters and digits hold them (the rule
-  by which language-model's v6 corpus leaves such documents out);
+  by which language-model's v6 corpus leaves such documents out). A project judged by other questions too, or by
+  questions in Japanese, makes their keys the same way (keys_of), as wide as their language's of WIDTHS;
 - a paragraph of Paloma's text: a line of the document is one of Paloma's lines of 13 tokens or more
   (paloma.paragraphs), as Paloma's guideline finds its text; or
 - a stretch of Paloma's text written another way: its letters and digits hold LETTERS in a row of a Paloma
@@ -38,7 +39,11 @@ from . import paloma
 # The rule by which language-model's v6 corpus leaves out the documents that hold evaluation questions.
 PREAMBLE = re.compile(r"^The following are questions \(with answers\) about [^\n]*\n\n")
 WRAPPER = re.compile(r"^(?:Question:|質問：)\s*|\s*(?:Answer:|回答：)$")
-WIDTH, MINIMUM = 64, 24
+# How many characters in the middle of a question tell it and the fewest that a question must have, by the language
+# it is written in: about what the 13 words in a row hold that such tests commonly look for. Japanese says as much
+# in about half as many characters.
+WIDTHS = {"en": (64, 24), "ja": (32, 12)}
+WIDTH, MINIMUM = WIDTHS["en"]  # of OLMES's questions
 # Where OLMES's document of a question holds the question alone: most tasks' query, or the field that it is made from.
 QUESTION_FIELDS = ("query", "question", "text", "sentence")
 # The stretches of Paloma's letters and digits that are looked for: so many in a row, from every so many-th.
@@ -85,12 +90,14 @@ def stretches(letters, width=LETTERS):
     return sums * INVERSES[:len(sums)]
 
 
-def question_key(question):
-    """The middle characters by which a question is found, or None if it is too short to tell from other text."""
+def question_key(question, language="en"):
+    """The middle characters by which a question in this language is found, or None if it is too short to tell from
+    other text."""
+    width, minimum = WIDTHS[language]
     text = normalized(WRAPPER.sub("", PREAMBLE.sub("", question)))
-    if len(text) < MINIMUM:
+    if len(text) < minimum:
         return None
-    width = min(len(text), WIDTH)
+    width = min(len(text), width)
     middle = (len(text) - width) // 2
     return text[middle:middle + width]
 
@@ -111,9 +118,9 @@ def olmes_questions(requests):
     return questions
 
 
-def keys_of(questions):
-    """The questions' keys, in order: what `Overlap` finds questions by."""
-    return sorted({question_key(question) for question in questions} - {None})
+def keys_of(questions, language="en"):
+    """The keys of questions in this language, in order: what `Overlap` finds questions by."""
+    return sorted({question_key(question, language) for question in questions} - {None})
 
 
 def digests_of(paragraphs):

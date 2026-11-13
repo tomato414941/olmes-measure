@@ -31,6 +31,24 @@ class QuestionTest(unittest.TestCase):
         self.assertFalse(found.holds_question("Which of the following best explains why the sea is salty?"))
         self.assertFalse(overlap.Overlap([], b"").holds("anything at all"))
 
+    def test_finds_a_japanese_question_by_half_as_many_characters_as_an_english_one(self):
+        question = "次のうち、地上の観測者から見て正午に空が青く見える理由を最もよく説明しているものはどれですか。"
+        key, letters = overlap.question_key(question, "ja"), overlap.normalized(question)
+        width, minimum = overlap.WIDTHS["ja"]
+        self.assertEqual((width, minimum), (overlap.WIDTH // 2, overlap.MINIMUM // 2))
+        self.assertEqual(len(key), width)
+        self.assertEqual(letters.index(key), (len(letters) - width) // 2)
+        self.assertEqual(overlap.question_key(f"質問：{question}\n回答：", "ja"), key)
+        # a question of 16 characters is long enough to tell in Japanese, and too short in English
+        short = "日本でいちばん高い山はどこですか。"
+        self.assertEqual(overlap.question_key(short, "ja"), overlap.normalized(short))
+        self.assertIsNone(overlap.question_key(short))
+        self.assertEqual(overlap.keys_of(["首都は？", question], "ja"), [key])
+        found = overlap.Overlap(overlap.keys_of([question], "ja"), b"")
+        self.assertTrue(found.holds_question("ある頁。\n\n次のうち，地上の 観測者から見て正午に空が青く見える理由を\n最もよく説明している"
+                                             "ものはどれですか？　散乱。"))
+        self.assertFalse(found.holds_question("次のうち、海の水が塩からい理由を最もよく説明しているものはどれですか。"))
+
     def test_keeps_a_texts_letters_and_digits_the_same_with_and_without_characters_beyond_ascii(self):
         plain = "Fig. 3_a (2019):\tThe END -- of it_all\n"
         self.assertEqual(overlap.normalized(plain), "fig3a2019theendofitall")
