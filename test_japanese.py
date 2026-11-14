@@ -129,6 +129,10 @@ class JapaneseTest(unittest.TestCase):
                                    "jmmlu_history:rc:bpb::ja": ["三"], "jmmlu_physics:rc:bpb::ja": ["甲"]})
         self.assertEqual(tasks["xwinograd_ja:rc:bpb::ja"][0]["pairs"][0][0], "犬は猫を追った。猫")
 
+    def test_makes_the_same_artifact_from_the_same_files(self):
+        first = japanese.make(self.directory / "first", self.directory)
+        self.assertEqual(japanese.make(self.directory / "second", self.directory).name, first.name)
+
     def test_says_that_its_questions_are_japanese_and_gives_each_question_as_the_task_writes_it(self):
         artifact = japanese.make(self.directory / "out", self.directory)
         self.assertEqual(om.check(artifact)["language"], "ja")

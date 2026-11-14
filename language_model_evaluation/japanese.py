@@ -193,8 +193,10 @@ def make(out, raw):
     (work / "requests").mkdir()
     configs = {}
     for alias, (asked, settings) in sorted(tasks.items()):
-        with gzip.open(work / "requests" / f"{alias}.jsonl.gz", "wt", encoding="utf-8") as lines:
-            lines.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in requests(asked))
+        data = io.BytesIO()
+        with gzip.GzipFile(fileobj=data, mode="wb", mtime=0) as file:  # no time in it: the same tasks, the same file
+            file.write("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in requests(asked)).encode("utf-8"))
+        (work / "requests" / f"{alias}.jsonl.gz").write_bytes(data.getvalue())
         configs[alias] = {"task_name": alias.partition(":")[0], **settings, "seed": SEED,
                           "primary_metric": "bits_per_byte_corr", "compute_gold_bpb": True}
     (work / "tasks.json").write_text(json.dumps(configs, indent=1))
