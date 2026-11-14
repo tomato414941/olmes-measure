@@ -4,12 +4,15 @@ A definition (definitions/NAME.json) says
 - the data that is measured, as the tools make it and as the artifacts that they make are named: OLMES's questions
   (olmes_measure.select: the suites that the categories count, or with `selected` those and others that a project
   measures besides; every question or so many of each task), Paloma's text (paloma.fetch: which split; paloma.part:
-  how much of it), and what is kept aside from decisions, a reserve, if any;
+  how much of it), and what is kept aside from decisions, a reserve, if any; and in Japanese, beside them, the
+  questions of japanese.py (`japanese`, selected as OLMES's) and the text of japanese_text.py (`japanese_text`, cut
+  as Paloma's);
 - the text that nothing measured by it may learn (overlap.make: every question of the requests, Paloma's splits
-  whole), by the artifact's name;
-- the categories that a result is divided into, each the mean of its members: OLMES's tasks and groups, a named
-  mean of some tasks, or Paloma's sources and domains; and
-- how two results compare (`improvement`).
+  whole), by the artifact's name, and the Japanese questions' and text's under `japanese`;
+- the categories that a result is divided into, each the mean of its members: OLMES's or the Japanese tasks and
+  groups, a named mean of some tasks, or the sources and domains of Paloma's or the Japanese text; and
+- how two results compare (`improvement`): by the mean of the categories' rates of improvement, or with `languages`
+  by the mean of each language's.
 
 A definition is not edited once a result names it: a change is a new name. One that is `within` another measures a
 part of the other's data and says only what differs, so that the two agree on everything else and a result by the
@@ -19,7 +22,8 @@ larger one can be compared on the part: OLMES's questions by olmes_measure.withi
     python -m language_model_evaluation.definition show NAME
 
 `make` builds what OUT does not hold yet and checks every name against the definition's; fetching Paloma needs
-HF_TOKEN (paloma.py).
+HF_TOKEN (paloma.py). `make_japanese` builds the Japanese artifacts alone, from the files of japanese.py's and
+japanese_text.py's sources.
 """
 import argparse
 import json
@@ -27,7 +31,7 @@ from pathlib import Path
 
 import olmes_measure
 
-from . import overlap, paloma
+from . import japanese, japanese_text, overlap, paloma
 
 DEFINITIONS = Path(__file__).parent / "definitions"
 
@@ -39,15 +43,28 @@ def load(name):
         return {"name": name, **own}
     whole = load(own["within"])
     merged = {**whole, **own, "name": name}
-    for section in ("olmes", "paloma"):
-        merged[section] = {**whole[section], **own.get(section, {})}
+    for section in ("olmes", "paloma", "japanese", "japanese_text"):
+        if section in whole:
+            merged[section] = {**whole[section], **own.get(section, {})}
     return merged
 
 
-def members(definition):
-    """Paloma's members of each category that is read: {category: [member]}, as paloma.fetch and paloma.part take
-    them."""
-    return {category: list(parts["paloma"]) for category, parts in definition["categories"].items() if "paloma" in parts}
+def members(definition, source="paloma"):
+    """The members of each category that is read of a source of text (paloma or japanese_text): {category: [member]},
+    as paloma.fetch and paloma.part take them."""
+    return {category: list(parts[source]) for category, parts in definition["categories"].items() if source in parts}
+
+
+def _have(out, made, name, expected, build):
+    """The artifact that a definition names, in `out`: checked if it is there, made by `build` if not."""
+    if (out / expected).exists():
+        olmes_measure.check(out / expected)
+    else:
+        artifact = build()
+        if artifact.name != expected:
+            raise ValueError(f"{name} names {expected}, and what was made is {artifact.name}")
+    made[expected] = out / expected
+    return out / expected
 
 
 def make(name, out, requests, download=paloma.download, listed=paloma.listed):
@@ -56,17 +73,7 @@ def make(name, out, requests, download=paloma.download, listed=paloma.listed):
     checked and kept; one that is made must come out under the definition's name."""
     definition, out, made = load(name) if isinstance(name, str) else name, Path(out), {}
     name = definition["name"]
-
-    def have(expected, build):
-        if (out / expected).exists():
-            olmes_measure.check(out / expected)
-        else:
-            artifact = build()
-            if artifact.name != expected:
-                raise ValueError(f"{name} names {expected}, and what was made is {artifact.name}")
-        made[expected] = out / expected
-        return out / expected
-
+    have = lambda expected, build: _have(out, made, name, expected, build)
     olmes, text, kinds = definition["olmes"], definition["paloma"], members(definition)
     if Path(requests).name != olmes["requests"]:
         raise ValueError(f"{name} is made from {olmes['requests']}")
@@ -86,6 +93,37 @@ def make(name, out, requests, download=paloma.download, listed=paloma.listed):
         have(aside["text"], lambda: paloma.part(other, out, kinds, **text["part"]))
     splits = [have(artifact, fetch(split)) for split, artifact in definition["overlap"]["paloma"].items()]
     have(definition["overlap"]["artifact"], lambda: overlap.make(out, requests, splits))
+    return {**made, **make_japanese(definition, out)}
+
+
+def make_japanese(name, out, raw=japanese.RAW):
+    """Every Japanese artifact that a definition names, in the directory `out`, from the files of the Japanese
+    questions' and text's sources, kept in `raw`: {name: its directory}, as `make` checks and keeps them."""
+    definition, out, made = load(name) if isinstance(name, str) else name, Path(out), {}
+    have = lambda expected, build: _have(out, made, definition["name"], expected, build)
+    if "japanese" in definition:
+        asked = definition["japanese"]
+        requests = have(asked["requests"], lambda: japanese.make(out, raw))
+        selection = have(asked["selection"], lambda: olmes_measure.select(
+            requests, out, asked.get("selected", asked["suites"]), asked.get("per_task"), asked.get("seed", 0)))
+        if "reserve" in asked:
+            aside = asked["reserve"]
+            have(aside["selection"], lambda: olmes_measure.reserve(requests, selection, out, aside["per_task"],
+                                                                   aside["seed"]))
+    fetch = lambda split: lambda: japanese_text.fetch(out, split, raw)
+    if "japanese_text" in definition:
+        text, kinds = definition["japanese_text"], members(definition, "japanese_text")
+        whole = have(text["whole"], fetch(text["split"]))
+        if text.get("part"):
+            have(text["text"], lambda: paloma.part(whole, out, kinds, **text["part"]))
+        if "reserve" in text:
+            aside = text["reserve"]
+            other = have(aside["whole"], fetch(aside["split"]))
+            have(aside["text"], lambda: paloma.part(other, out, kinds, **text["part"]))
+    if "japanese" in definition.get("overlap", {}):
+        aside = definition["overlap"]["japanese"]
+        splits = [have(artifact, fetch(split)) for split, artifact in aside["text"].items()]
+        have(aside["artifact"], lambda: overlap.make(out, requests, splits))
     return made
 
 
@@ -95,10 +133,11 @@ def _mean(values):
 
 
 def answered(definition, groups, scores, partial=False):
-    """The score of each category that is answered, from each OLMES task's score ({task: score}) and the groups in
-    which a selection holds the suites' tasks. A member is a task, a group (the mean of its members, as OLMES averages
-    them), or a named mean of some tasks ({name: [task]}). The categories count every task of the definition's suites
-    once; a selection that is `partial`, as a reserve is, may lack tasks, and its categories are of the others."""
+    """The score of each category that is answered, from each task's score ({task: score}) and the groups in which
+    the selections hold the suites' tasks, OLMES's and the Japanese ones together. A member is a task, a group (the
+    mean of its members, as OLMES averages them), or a named mean of some tasks ({name: [task]}). The categories
+    count every task of the definition's suites once; a selection that is `partial`, as a reserve is, may lack
+    tasks, and its categories are of the others."""
 
     def tasks(member):
         return list(*member.values()) if isinstance(member, dict) else olmes_measure.leaves(groups, member)
@@ -108,10 +147,12 @@ def answered(definition, groups, scores, partial=False):
             return _mean(scores[task] for task in tasks(member) if task in scores)
         return _mean(score(inner) for inner in groups[member]) if member in groups else scores[member]
 
-    sets = {category: parts["olmes"] for category, parts in definition["categories"].items() if "olmes" in parts}
+    sources = ("olmes", "japanese")
+    sets = {category: parts[source] for category, parts in definition["categories"].items()
+            for source in sources if source in parts}
     counted = [task for parts in sets.values() for member in parts for task in tasks(member)]
-    suites = [task for suite in definition["olmes"]["suites"] if suite in groups
-              for task in olmes_measure.leaves(groups, suite)]
+    suites = [task for source in sources if source in definition for suite in definition[source]["suites"]
+              if suite in groups for task in olmes_measure.leaves(groups, suite)]
     asked = {task for task in suites if task in scores}
     if len(set(counted)) != len(counted) or not asked <= set(counted):
         raise ValueError("the categories do not count every task of the suites once")
@@ -122,7 +163,8 @@ def answered(definition, groups, scores, partial=False):
 
 
 def read(definition, domains, partial=False):
-    """The score of each category that is read, from each of Paloma's domains' bits per byte ({SOURCE/DOMAIN: BPB}):
+    """The score of each category that is read, from each domain's bits per byte ({SOURCE/DOMAIN: BPB}), of Paloma's
+    and of the Japanese text together:
     a member is its one domain or the mean of its source's, and a category the mean of its members. Every member is
     scored, unless the text is `partial`, as a reserve's may be: its categories are of the members that it holds."""
 
@@ -135,7 +177,7 @@ def read(definition, domains, partial=False):
         return sum(found) / len(found) if found else None
 
     scores = {}
-    for category, names in members(definition).items():
+    for category, names in {**members(definition), **members(definition, "japanese_text")}.items():
         found = [bits for bits in map(member, names) if bits is not None]
         if not found:
             raise ValueError(f"no member of {category} is scored")
@@ -150,11 +192,19 @@ def categories(definition):
 
 def improvement(definition, scores, standing):
     """By how much `scores` improve on `standing` ({category: score}, of every category): under the rule
-    `mean_rate`, the mean of the categories' rates of improvement, each counting equally. Positive: `scores` are the
+    `mean_rate`, the mean of the categories' rates of improvement, each counting equally; under
+    `mean_rate_by_language`, the mean of each language's mean of its categories' (`languages`: {language:
+    [category]}), so that each language counts equally however many categories it has. Positive: `scores` are the
     better."""
-    if definition["compare"] != "mean_rate":
-        raise ValueError(f"no rule {definition['compare']}")
-    return _mean(1 - scores[category] / standing[category] for category in categories(definition))
+    rate = lambda category: 1 - scores[category] / standing[category]
+    if definition["compare"] == "mean_rate":
+        return _mean(map(rate, categories(definition)))
+    if definition["compare"] == "mean_rate_by_language":
+        languages = definition["languages"]
+        if sorted(c for names in languages.values() for c in names) != sorted(categories(definition)):
+            raise ValueError("the languages do not hold every category once")
+        return _mean(_mean(map(rate, names)) for names in languages.values())
+    raise ValueError(f"no rule {definition['compare']}")
 
 
 def main():

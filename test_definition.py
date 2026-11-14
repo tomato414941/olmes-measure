@@ -11,6 +11,11 @@ TOY = {"name": "toy", "compare": "mean_rate", "olmes": {"suites": ["first", "sec
        "categories": {"science": {"olmes": ["t1", {"hard": ["t2", "t3"]}]}, "sums": {"olmes": ["second"]},
                       "web": {"paloma": CATEGORIES["web"]}, "books": {"paloma": CATEGORIES["books"]}}}
 GROUPS = {"first": ["t1", "pair"], "pair": ["t2", "t3"], "second": ["t4", "inner"], "inner": ["t5", "t6"]}
+# Two languages: English as TOY's, Japanese questions and text beside them.
+BOTH = {**TOY, "compare": "mean_rate_by_language", "japanese": {"suites": ["ja"]},
+        "categories": {**TOY["categories"], "ja_common": {"japanese": ["j1", "j2"]},
+                       "ja_web": {"japanese_text": ["mc4_ja"]}},
+        "languages": {"en": ["science", "sums", "web", "books"], "ja": ["ja_common", "ja_web"]}}
 
 
 class LoadTest(unittest.TestCase):
@@ -64,6 +69,28 @@ class ScoresTest(unittest.TestCase):
         del domains["dolma-v1_5/books"]
         with self.assertRaisesRegex(ValueError, "books"):
             definition.read(TOY, domains, partial=True)  # a category with no member at all has no score
+
+    def test_answers_and_reads_the_japanese_categories_beside_the_english_ones(self):
+        scores = {"t1": 1.0, "t2": 2.0, "t3": 4.0, "t4": 6.0, "t5": 1.0, "t6": 3.0, "j1": 1.0, "j2": 2.0}
+        groups = {**GROUPS, "ja": ["j1", "j2"]}
+        found = definition.answered(BOTH, groups, scores)
+        self.assertEqual(found, {"science": 2.0, "sums": 4.0, "ja_common": 1.5})
+        fewer = dict(BOTH, categories={**BOTH["categories"], "ja_common": {"japanese": ["j1"]}})
+        with self.assertRaisesRegex(ValueError, "once"):
+            definition.answered(fewer, groups, scores)  # j2 is asked and not counted
+        domains = {"c4_en/c4_en": 1.0, "c4_100_domains/1_a": 3.0, "dolma-v1_5/common-crawl": 5.0,
+                   "dolma-v1_5/books": 7.0, "mc4_ja/mc4_ja": 0.9}
+        self.assertEqual(definition.read(BOTH, domains), {"web": 3.0, "books": 7.0, "ja_web": 0.9})
+
+    def test_each_language_counts_equally_however_many_categories_it_has(self):
+        standing = {category: 2.0 for category in definition.categories(BOTH)}
+        better_english = dict(standing, science=1.0)  # one of four English categories half the bits
+        better_japanese = dict(standing, ja_web=1.0)  # one of two Japanese categories half the bits
+        self.assertAlmostEqual(definition.improvement(BOTH, better_english, standing), (0.5 / 4) / 2)
+        self.assertAlmostEqual(definition.improvement(BOTH, better_japanese, standing), (0.5 / 2) / 2)
+        missing = dict(BOTH, languages={"en": ["science", "sums", "web", "books"], "ja": ["ja_common"]})
+        with self.assertRaisesRegex(ValueError, "every category"):
+            definition.improvement(missing, better_english, standing)
 
     def test_one_result_improves_on_another_by_the_mean_of_the_categories_rates(self):
         standing = {category: 2.0 for category in definition.categories(TOY)}

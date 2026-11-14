@@ -16,8 +16,9 @@ model learns from, what an index holds and what a tokenizer is made from. A docu
   may be broken elsewhere: the line test alone passes both.
 
 `make` keeps what tells the documents as an artifact small enough to go to every machine: the keys of every question
-of a requests artifact, and of artifacts of Paloma's text (paloma.fetch: the splits whole, not only what a project
-reads of them) the paragraphs' digests and the stretches' hashes. `load(artifact).holds(text)` tells a document; how
+of some requests artifacts (OLMES's, and japanese.py's, whose keys are as wide as Japanese's), and of artifacts of
+Paloma's text and of japanese_text.py's (the splits whole, not only what a project reads of them) the paragraphs'
+digests and the stretches' hashes. `load(artifact).holds(text)` tells a document; how
 a project reads its training text, and what it counts as one document, is the project's.
 """
 import atexit
@@ -34,7 +35,7 @@ import numpy as np
 
 import olmes_measure
 
-from . import paloma
+from . import japanese_text, paloma
 
 # The rule by which language-model's v6 corpus leaves out the documents that hold evaluation questions.
 PREAMBLE = re.compile(r"^The following are questions \(with answers\) about [^\n]*\n\n")
@@ -206,19 +207,28 @@ def _holds(text):
 
 
 def make(out, requests, texts):
-    """The artifact of what tells the documents that overlap the evaluation: the keys of the questions of an
-    olmes-measure requests artifact (questions.txt, a line each), and of artifacts of Paloma's text the digests of
-    the paragraphs (paragraphs.bin, 16 bytes each) and the hashes of the stretches of letters (stretches.bin, 8 bytes
-    each), all in order."""
+    """The artifact of what tells the documents that overlap the evaluation: the keys of the questions of a requests
+    artifact or several (questions.txt, a line each, each question's as wide as its artifact's language's), and of
+    artifacts of Paloma's text or japanese_text.py's the digests of the paragraphs (paragraphs.bin, 16 bytes each) and
+    the hashes of the stretches of letters (stretches.bin, 8 bytes each), all in order."""
+    asked = [requests] if isinstance(requests, (str, Path)) else list(requests)
     for artifact in texts:
-        if olmes_measure.check(artifact)["revision"] != paloma.REVISION:
-            raise ValueError(f"{artifact} was not prepared from Paloma {paloma.REVISION}")
-    keys = keys_of(olmes_questions(requests))
+        manifest = olmes_measure.check(artifact)
+        if not (japanese_text.made_here(manifest) if manifest["kind"].startswith("japanese-text-")
+                else manifest.get("revision") == paloma.REVISION):
+            raise ValueError(f"{artifact} was not prepared from Paloma {paloma.REVISION} or japanese_text's sources")
+    languages = {Path(artifact).name: olmes_measure.check(artifact).get("language", "en") for artifact in asked}
+    keys = sorted({key for artifact in asked
+                   for key in keys_of(olmes_questions(artifact), languages[Path(artifact).name])})
     documents = lambda: (text for artifact in texts for paths in paloma.files(artifact).values()
                          for text in paloma.documents(paths))
     digests = digests_of(paragraph for text in documents() for paragraph in paloma.paragraphs(text))
-    return write(out, keys, digests, stretches_of(documents()), questions=Path(requests).name,
-                 text=sorted(Path(artifact).name for artifact in texts))
+    # An artifact of OLMES's questions alone is made as before, under the name that it had.
+    made_from = {} if set(languages.values()) == {"en"} else {
+        "widths": {language: WIDTHS[language] for language in sorted(set(languages.values()))}}
+    questions = Path(asked[0]).name if len(asked) == 1 else sorted(languages)
+    return write(out, keys, digests, stretches_of(documents()), questions=questions,
+                 text=sorted(Path(artifact).name for artifact in texts), **made_from)
 
 
 def write(out, keys, digests, hashes=b"", **made_from):

@@ -12,7 +12,9 @@ measure, from each task's own data at a fixed revision:
 - JMMLU: a question and its answer, each subject a task, as OLMES's MMLU, without examples: it has no other split.
 
 The artifact has the form of olmes_build.py's, every choice of a question a request, so that olmes_measure's select,
-rows and score read it unchanged. Its suite `ja:bpb` holds the five tasks, JMMLU as the group of its subjects.
+rows and score read it unchanged. Its suite `ja:bpb` holds the five tasks, JMMLU as the group of its subjects. A
+request's `doc` holds its question as the task writes it, by which overlap.py finds the question in other text, and
+the artifact says that its language is Japanese.
 
     python -m language_model_evaluation.japanese make OUT [RAW]   # RAW: where the tasks' files are kept
 """
@@ -54,15 +56,17 @@ SOURCES = {
               "revision": "3637b25e444ccfdcde4d23a783cbe8e674faa01b", "license": "CC-BY-NC-ND-4.0", "files": {
                   "JMMLU.zip": "3ba7d912943ede44fb7ec06aa1df067ac6bee157e65c5588736b9b983f0e684d"}},
 }
+# Where the sources' files are kept unless another place is named: in the user's cache, as Hugging Face keeps its own.
+RAW = Path.home() / ".cache" / "language-model-evaluation" / "japanese"
 SUITE = "ja:bpb"
 JMMLU = "jmmlu:rc:bpb::ja"
 QUESTION, ANSWER = "質問：", "回答："
 SEED = 0  # which questions of a training split are a task's examples
 
 
-def fetch(source, path, raw):
+def fetch(source, path, raw, sources=SOURCES):
     """A file of a source, fetched into `raw` once and checked against its SHA-256."""
-    spec = SOURCES[source]
+    spec = sources[source]
     local = Path(raw) / source / path
     if not local.exists():
         local.parent.mkdir(parents=True, exist_ok=True)
@@ -88,32 +92,35 @@ def shots(examples, count, task):
     return "".join(f"{context}{answer}\n\n" for context, answer in chosen)
 
 
-def chosen(context, choices, label):
-    """A question asked of each of its choices: (contexts, continuations, label)."""
-    return [context] * len(choices), list(choices), label
+def chosen(context, choices, label, question):
+    """A question asked of each of its choices: (contexts, continuations, label, the question as the task writes it)."""
+    return [context] * len(choices), list(choices), label, question
 
 
 def jcommonsenseqa(raw):
     def asked(row):
-        return f"{QUESTION}{row['question']}\n{ANSWER}", [row[f"choice{k}"] for k in range(5)], row["label"]
+        return (f"{QUESTION}{row['question']}\n{ANSWER}", [row[f"choice{k}"] for k in range(5)], row["label"],
+                row["question"])
 
     folder = "datasets/jcommonsenseqa-v1.2"
     train = [asked(row) for row in json_lines(fetch("jglue", f"{folder}/train-v1.2.json", raw))]
-    before = shots([(context, choices[label]) for context, choices, label in train], 5, "jcommonsenseqa")
-    return [chosen(before + context, choices, label)
-            for context, choices, label in map(asked, json_lines(fetch("jglue", f"{folder}/valid-v1.2.json", raw)))]
+    before = shots([(context, choices[label]) for context, choices, label, _ in train], 5, "jcommonsenseqa")
+    return [chosen(before + context, choices, label, question) for context, choices, label, question
+            in map(asked, json_lines(fetch("jglue", f"{folder}/valid-v1.2.json", raw)))]
 
 
 def kuci(raw):
     def asked(row):
         # KUCI writes its clauses with a space between words, which Japanese text does not.
         joined = lambda text: text.replace(" ", "")
-        return joined(row["context"]), [joined(row[f"choice_{k}"]) for k in "abcd"], "abcd".index(row["label"])
+        choices, label = [joined(row[f"choice_{k}"]) for k in "abcd"], "abcd".index(row["label"])
+        # The clause with its right continuation, as the text that KUCI came from wrote it.
+        return joined(row["context"]), choices, label, joined(row["context"]) + choices[label]
 
     train = [asked(row) for row in json_lines(fetch("kuci", "dataset/train.jsonl", raw))]
-    before = shots([(context, choices[label]) for context, choices, label in train], 5, "kuci")
-    return [chosen(before + context, choices, label)
-            for context, choices, label in map(asked, json_lines(fetch("kuci", "dataset/test.jsonl", raw)))]
+    before = shots([(context, choices[label]) for context, choices, label, _ in train], 5, "kuci")
+    return [chosen(before + context, choices, label, question) for context, choices, label, question
+            in map(asked, json_lines(fetch("kuci", "dataset/test.jsonl", raw)))]
 
 
 def xwinograd(raw):
@@ -124,8 +131,8 @@ def xwinograd(raw):
         same = 0
         while same < min(len(first), len(second)) and first[-1 - same] == second[-1 - same]:
             same += 1
-        rest = first[len(first) - same:]
-        return [first[:len(first) - same], second[:len(second) - same]], [rest, rest], int(row["answer"]) - 1
+        rest, label = first[len(first) - same:], int(row["answer"]) - 1
+        return [first[:len(first) - same], second[:len(second) - same]], [rest, rest], label, (first, second)[label]
 
     return [asked(row) for row in json_lines(fetch("xwinograd", "test/xwinograd-ja.json", raw))]
 
@@ -133,7 +140,8 @@ def xwinograd(raw):
 def jsquad(raw):
     def asked(row):
         passage, question = row
-        return f"文脈：{passage}\n{QUESTION}{question['question']}\n{ANSWER}", question["answers"][0]["text"]
+        return (f"文脈：{passage}\n{QUESTION}{question['question']}\n{ANSWER}", question["answers"][0]["text"],
+                question["question"])
 
     def questions(path):
         with open(fetch("jglue", path, raw), encoding="utf-8") as source:
@@ -143,9 +151,9 @@ def jsquad(raw):
                 for paragraph in article["paragraphs"] for question in paragraph["qas"]]
 
     folder = "datasets/jsquad-v1.2"
-    before = shots([asked(row) for row in questions(f"{folder}/train-v1.2.json")], 2, "jsquad")
-    return [chosen(before + context, [answer], 0)
-            for context, answer in map(asked, questions(f"{folder}/valid-v1.2.json"))]
+    before = shots([asked(row)[:2] for row in questions(f"{folder}/train-v1.2.json")], 2, "jsquad")
+    return [chosen(before + context, [answer], 0, question)
+            for context, answer, question in map(asked, questions(f"{folder}/valid-v1.2.json"))]
 
 
 def jmmlu(raw):
@@ -157,16 +165,17 @@ def jmmlu(raw):
                 continue
             rows = csv.DictReader(io.TextIOWrapper(archive.open(name), encoding="utf-8-sig"))
             subjects[Path(name).stem] = [chosen(f"{QUESTION}{row['question'].strip()}\n{ANSWER}",
-                                                [row[k] for k in "ABCD"], "ABCD".index(row["answer"].strip()))
+                                                [row[k] for k in "ABCD"], "ABCD".index(row["answer"].strip()),
+                                                row["question"].strip())
                                          for row in rows]
     return subjects
 
 
 def requests(asked):
     """A task's requests as OLMES writes them: each question's choices in order, all naming the question."""
-    return [{"doc_id": doc_id, "native_id": doc_id, "idx": idx, "label": label,
+    return [{"doc_id": doc_id, "native_id": doc_id, "idx": idx, "label": label, "doc": {"question": question},
              "request": {"context": context, "continuation": continuation}}
-            for doc_id, (contexts, continuations, label) in enumerate(asked)
+            for doc_id, (contexts, continuations, label, question) in enumerate(asked)
             for idx, (context, continuation) in enumerate(zip(contexts, continuations))]
 
 
@@ -194,7 +203,7 @@ def make(out, raw):
     sources = {name: {"repository": spec["repository"], "revision": spec["revision"]}
                for name, spec in SOURCES.items()}
     return olmes_measure.seal(work, "requests", olmes=None, made_by="language_model_evaluation.japanese",
-                              sources=sources, suites=sorted(suites))
+                              language="ja", sources=sources, suites=sorted(suites))
 
 
 def main():
@@ -202,7 +211,7 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     making = commands.add_parser("make")
     making.add_argument("out")
-    making.add_argument("raw", nargs="?", default=Path.home() / ".cache" / "language-model-evaluation" / "japanese")
+    making.add_argument("raw", nargs="?", default=RAW)
     args = parser.parse_args()
     print(make(args.out, args.raw))
 
