@@ -20,9 +20,9 @@ BOTH = {**TOY, "compare": "mean_rate_by_language", "japanese": {"suites": ["ja"]
 
 class LoadTest(unittest.TestCase):
     def test_a_definition_within_another_says_what_differs_and_takes_the_rest(self):
-        whole, part = definition.load("eleven-1"), definition.load("eleven-part-1")
+        whole, part = definition.load("knowledge-en-1"), definition.load("knowledge-en-part-1")
         self.assertNotIn("within", whole)
-        self.assertEqual((part["name"], part["within"]), ("eleven-part-1", "eleven-1"))
+        self.assertEqual((part["name"], part["within"]), ("knowledge-en-part-1", "knowledge-en-1"))
         for key in ("categories", "compare", "overlap"):
             self.assertEqual(part[key], whole[key])
         self.assertEqual(part["olmes"]["requests"], whole["olmes"]["requests"])
@@ -33,6 +33,18 @@ class LoadTest(unittest.TestCase):
         self.assertNotEqual(part["paloma"]["text"], whole["paloma"]["text"])
         self.assertEqual(len(definition.categories(part)), 11)
         self.assertEqual(list(definition.members(whole)), ["web", "encyclopedia", "papers", "posts", "books", "news"])
+
+
+class TwoLanguagesTest(unittest.TestCase):
+    def test_knowledge_ja_en_measures_knowledge_en_beside_japanese_and_counts_the_two_languages_equally(self):
+        english, both = definition.load("knowledge-en-1"), definition.load("knowledge-ja-en-1")
+        for section in ("olmes", "paloma"):
+            self.assertEqual(both[section], english[section])
+        self.assertEqual({k: v for k, v in both["overlap"].items() if k != "japanese"}, english["overlap"])
+        self.assertEqual(list(both["categories"])[:11], list(english["categories"]))
+        self.assertEqual({language: len(names) for language, names in both["languages"].items()}, {"en": 11, "ja": 5})
+        self.assertEqual(both["compare"], "mean_rate_by_language")
+        self.assertEqual(list(definition.members(both, "japanese_text")), ["ja_web", "ja_encyclopedia"])
 
 
 class ScoresTest(unittest.TestCase):
