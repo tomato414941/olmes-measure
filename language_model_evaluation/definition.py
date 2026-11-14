@@ -12,7 +12,8 @@ A definition (definitions/NAME.json) says
 - the categories that a result is divided into, each the mean of its members: OLMES's or the Japanese tasks and
   groups, a named mean of some tasks, or the sources and domains of Paloma's or the Japanese text; and
 - how two results compare (`improvement`): by the mean of the categories' rates of improvement, or with `languages`
-  by the mean of each language's.
+  by the mean of each language's; a score improves as it falls (bits per byte) unless the definition says that a
+  higher one is `better`, as the share of prompts whose instructions a model follows (instructions.py, `followed`).
 
 A definition is not edited once a result names it: a change is a new name. One that is `within` another measures a
 part of the other's data and says only what differs, so that the two agree on everything else and a result by the
@@ -43,7 +44,7 @@ def load(name):
         return {"name": name, **own}
     whole = load(own["within"])
     merged = {**whole, **own, "name": name}
-    for section in ("olmes", "paloma", "japanese", "japanese_text"):
+    for section in ("olmes", "paloma", "japanese", "japanese_text", "instructions"):
         if section in whole:
             merged[section] = {**whole[section], **own.get(section, {})}
     return merged
@@ -185,6 +186,13 @@ def read(definition, domains, partial=False):
     return scores
 
 
+def followed(definition, shares):
+    """The score of each category of instructions, from each language's share of prompts whose every instruction a
+    model follows at the definition's level ({language: share}, as instructions.score gives them)."""
+    return {category: _mean(shares[language] for language in parts["instructions"])
+            for category, parts in definition["categories"].items() if "instructions" in parts}
+
+
 def categories(definition):
     """The categories' names, in the definition's order."""
     return tuple(definition["categories"])
@@ -196,7 +204,9 @@ def improvement(definition, scores, standing):
     `mean_rate_by_language`, the mean of each language's mean of its categories' (`languages`: {language:
     [category]}), so that each language counts equally however many categories it has. Positive: `scores` are the
     better."""
-    rate = lambda category: 1 - scores[category] / standing[category]
+    higher = definition.get("better") == "higher"
+    rate = lambda category: (scores[category] / standing[category] - 1 if higher
+                             else 1 - scores[category] / standing[category])
     if definition["compare"] == "mean_rate":
         return _mean(map(rate, categories(definition)))
     if definition["compare"] == "mean_rate_by_language":

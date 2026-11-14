@@ -5,6 +5,7 @@ publisher defines it and that find the text that overlaps it, and the evaluation
 - paloma: AI2's Paloma, its text read as Paloma reads it.
 - japanese: Japanese tasks asked as OLMES asks English ones for bits per byte, as a requests artifact of its form.
 - japanese_text: Japanese text held out of public corpora, kept as Paloma keeps its text.
+- instructions: following instructions as IFEval and M-IFEval ask and score it, by the authors' code.
 - overlap: the documents that hold a benchmark's questions or text, which nothing that is measured by it may learn.
 - definition: evaluation definitions by name (definitions/NAME.json): the data that is measured, how it is divided
   into categories and how two results compare. A definition is not edited once it is used: a change is a new name.

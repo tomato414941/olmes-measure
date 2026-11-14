@@ -1,0 +1,30 @@
+{
+ "instructions": {
+  "repository": "lightblue-tech/M-IFEval",
+  "commit": "10b874dbf8c4ca25ed5d876e1d3226e7f3f9d0dc",
+  "level": "strict",
+  "max_new_tokens": 2048
+ },
+ "categories": {
+  "ifeval": {
+   "instructions": [
+    "en"
+   ]
+  },
+  "ja_ifeval": {
+   "instructions": [
+    "ja"
+   ]
+  }
+ },
+ "languages": {
+  "en": [
+   "ifeval"
+  ],
+  "ja": [
+   "ja_ifeval"
+  ]
+ },
+ "better": "higher",
+ "compare": "mean_rate_by_language"
+}
