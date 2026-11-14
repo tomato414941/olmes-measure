@@ -9,12 +9,18 @@ measure, from each task's own data at a fixed revision:
 - KUCI: a clause and the clause that follows it, after five pairs of the training split;
 - xWinograd (Japanese): the rest of the sentence after the referent, as OLMES reads WinoGrande;
 - JSQuAD (JGLUE): a passage, a question and the answer in it, after two of the training split;
-- JMMLU: a question and its answer, each subject a task, as OLMES's MMLU, without examples: it has no other split.
+- JMMLU: a question and its answer, each subject a task, as OLMES's MMLU, without examples: it has no other split;
+- JEMHopQA, NIILC and AIO (JAQKET): a question and its short answer, after five of another split, as llm-jp-eval
+  splits them (NIILC's first answer where it gives several, and none of its questions whose answer is "-");
+- JamC-QA: a question about Japan and its answer of four, after five of its development split.
+
+The tasks are those of llm-jp-eval's categories that a correct answer of a few words can score: commonsense
+reasoning, reading comprehension, examinations and question answering.
 
 The artifact has the form of olmes_build.py's, every choice of a question a request, so that olmes_measure's select,
-rows and score read it unchanged. Its suite `ja:bpb` holds the five tasks, JMMLU as the group of its subjects. A
+rows and score read it unchanged. Its suite `ja:bpb` holds the tasks, JMMLU as the group of its subjects. A
 request's `doc` holds its question as the task writes it, by which overlap.py finds the question in other text, and
-the artifact says that its language is Japanese.
+the artifact says that its language is Japanese. Reading JamC-QA's files needs pyarrow.
 
     python -m language_model_evaluation.japanese make OUT [RAW]   # RAW: where the tasks' files are kept
 """
@@ -26,6 +32,7 @@ import json
 import random
 import tempfile
 import urllib.request
+import xml.etree.ElementTree
 import zipfile
 from pathlib import Path
 
@@ -52,6 +59,25 @@ SOURCES = {
     "xwinograd": {"url": HUGGING_FACE, "repository": "polm-stability/xwinograd-ja",
                   "revision": "2b841a0b715e00b389c38976daf25374368dee30", "license": "CC-BY-4.0", "files": {
                       "test/xwinograd-ja.json": "bc272a8bf08d52de84ee12bf1f575b440451e4ed450a8c7f6be8cf8e5cd9facd"}},
+    "jemhopqa": {"url": GITHUB, "repository": "aiishii/JEMHopQA",
+                 "revision": "fed5024f4f39f02727e699cb7ccb67935a779a5a", "license": "CC-BY-SA-4.0", "files": {
+                     "corpus/train.json": "c64392b4087299bcfaa02fe2584128b5dc50fe5ea83e1bd600cadfc984669e65",
+                     "corpus/dev.json": "2f3b8a518ca3051fc002f343ba3c26f6f3be902464061b43c30c5a1d37a9269a"}},
+    "niilc": {"url": GITHUB, "repository": "mynlp/niilc-qa", "revision": "b6d47968b2e301a5e953fb1922a08ed56099646b",
+              "license": "CC-BY-SA-4.0", "files": {
+                  "data/NIILC-ECQA2015_dev.xml": "983dcaeb9ef38ca45d1114e8b420fdd4b358e827c235b1bfb4fc5e50ca70caf3",
+                  "data/NIILC-ECQA2015_test.xml": "4a787463961db87e56e496c49cb40ca59f26d220e3ccc48588ad65b0dd4ce0d2"}},
+    # JAQKET's files of the first AI King contest, which are not kept under revisions: their SHA-256 fix them.
+    "aio": {"url": "https://jaqket.s3.ap-northeast-1.amazonaws.com/{path}", "repository": "jaqket", "revision": None,
+            "license": "CC-BY-SA-4.0", "files": {
+                "data/aio_02/aio_01_dev.jsonl": "ae62245b9aa20e641acdaac5811ef5037b3634a1385907f0c997619d9eda01b8",
+                "data/aio_02/aio_01_test.jsonl": "ad4e1ba3125732f62bce2515abfff5d61cee9015f463ade9018b8023aadc0e18"}},
+    "jamc_qa": {"url": HUGGING_FACE, "repository": "sbintuitions/JamC-QA",
+                "revision": "ec2f8a34b1cfb9dcd8c50583eb688ef2ee3fb671", "license": "CC-BY-SA-4.0", "files": {
+                    "v1.0/dev-00000-of-00001.parquet":
+                        "b27ba65ba655716a6127be9a4f7e1051684318dec746fccba6cc276cda9b02e8",
+                    "v1.0/test-00000-of-00001.parquet":
+                        "c99a510c207b110c2beacb053cbd1d72cd4c593bfeced71478ff04a942f55bb6"}},
     "jmmlu": {"url": HUGGING_FACE, "repository": "nlp-waseda/JMMLU",
               "revision": "3637b25e444ccfdcde4d23a783cbe8e674faa01b", "license": "CC-BY-NC-ND-4.0", "files": {
                   "JMMLU.zip": "3ba7d912943ede44fb7ec06aa1df067ac6bee157e65c5588736b9b983f0e684d"}},
@@ -84,6 +110,13 @@ def fetch(source, path, raw, sources=SOURCES):
 def json_lines(path):
     with open(path, encoding="utf-8") as lines:
         return [json.loads(line) for line in lines if line.strip()]
+
+
+def parquet_rows(path):
+    """The rows of a parquet file, each a dict."""
+    import pyarrow.parquet
+
+    return pyarrow.parquet.read_table(path).to_pylist()
 
 
 def shots(examples, count, task):
@@ -171,6 +204,48 @@ def jmmlu(raw):
     return subjects
 
 
+def answered(train, test, task):
+    """Questions with a short answer, each after five of another split: (question, answer) pairs of each split."""
+    asked = lambda question: f"{QUESTION}{question}\n{ANSWER}"
+    before = shots([(asked(question), answer) for question, answer in train], 5, task)
+    return [chosen(before + asked(question), [answer], 0, question) for question, answer in test]
+
+
+def jemhopqa(raw):
+    pairs = lambda path: [(row["question"], row["answer"])
+                          for row in json.loads(fetch("jemhopqa", path, raw).read_text(encoding="utf-8"))]
+    # As llm-jp-eval splits it: the development questions are the ones asked.
+    return answered(pairs("corpus/train.json"), pairs("corpus/dev.json"), "jemhopqa")
+
+
+def niilc(raw):
+    def pairs(path):
+        found = []
+        for question in xml.etree.ElementTree.parse(fetch("niilc", path, raw)).getroot().iter("question"):
+            answers = [answer.text for answer in question.find("answers").iter("answer") if answer.text]
+            if answers and answers != ["-"]:  # "-": the question has no answer, and llm-jp-eval leaves it out
+                found.append((question.find("text").text, answers[0]))
+        return found
+
+    return answered(pairs("data/NIILC-ECQA2015_dev.xml"), pairs("data/NIILC-ECQA2015_test.xml"), "niilc")
+
+
+def aio(raw):
+    pairs = lambda path: [(row["question"], row["answers"][0]) for row in json_lines(fetch("aio", path, raw))]
+    return answered(pairs("data/aio_02/aio_01_dev.jsonl"), pairs("data/aio_02/aio_01_test.jsonl"), "aio")
+
+
+def jamc_qa(raw):
+    def asked(row):
+        choices = [row[f"choice{k}"] for k in range(4)]
+        return f"{QUESTION}{row['question']}\n{ANSWER}", choices, int(row["answer_index"]), row["question"]
+
+    dev = [asked(row) for row in parquet_rows(fetch("jamc_qa", "v1.0/dev-00000-of-00001.parquet", raw))]
+    before = shots([(context, choices[label]) for context, choices, label, _ in dev], 5, "jamc_qa")
+    return [chosen(before + context, choices, label, question) for context, choices, label, question
+            in map(asked, parquet_rows(fetch("jamc_qa", "v1.0/test-00000-of-00001.parquet", raw)))]
+
+
 def requests(asked):
     """A task's requests as OLMES writes them: each question's choices in order, all naming the question."""
     return [{"doc_id": doc_id, "native_id": doc_id, "idx": idx, "label": label, "doc": {"question": question},
@@ -184,7 +259,11 @@ def make(out, raw):
     tasks = {"jcommonsenseqa:rc:bpb::ja": (jcommonsenseqa(raw), {"split": "validation", "num_shots": 5}),
              "kuci:rc:bpb::ja": (kuci(raw), {"split": "test", "num_shots": 5}),
              "xwinograd_ja:rc:bpb::ja": (xwinograd(raw), {"split": "test", "num_shots": 0}),
-             "jsquad:rc:bpb::ja": (jsquad(raw), {"split": "validation", "num_shots": 2})}
+             "jsquad:rc:bpb::ja": (jsquad(raw), {"split": "validation", "num_shots": 2}),
+             "jemhopqa:rc:bpb::ja": (jemhopqa(raw), {"split": "dev", "num_shots": 5}),
+             "niilc:rc:bpb::ja": (niilc(raw), {"split": "test", "num_shots": 5}),
+             "aio:rc:bpb::ja": (aio(raw), {"split": "test", "num_shots": 5}),
+             "jamc_qa:rc:bpb::ja": (jamc_qa(raw), {"split": "test", "num_shots": 5})}
     subjects = {f"jmmlu_{subject}:rc:bpb::ja": asked for subject, asked in jmmlu(raw).items()}
     tasks |= {alias: (asked, {"split": "test", "num_shots": 0}) for alias, asked in subjects.items()}
     out = Path(out)

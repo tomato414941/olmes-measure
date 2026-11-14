@@ -28,6 +28,19 @@ def jsquad(questions):
         for n in range(questions)]}]}
 
 
+def niilc_xml(questions):
+    """NIILC's file of questions, each (its text, its answers)."""
+    body = "".join(f'<question id="q{n}"><text>{text}</text><answers>'
+                   + "".join(f"<answer>{answer}</answer>" for answer in answers) + "</answers><meta/></question>"
+                   for n, (text, answers) in enumerate(questions))
+    return f'<?xml version="1.0" encoding="UTF-8"?><questions>{body}</questions>'
+
+
+def jamc_row(n, answer=1):
+    return {"qid": f"j{n}", "question": f"日本の{n}は？", **{f"choice{k}": f"選{n}-{k}" for k in range(4)},
+            "answer_index": str(answer)}
+
+
 def jmmlu_zip(subjects):
     data = io.BytesIO()
     with zipfile.ZipFile(data, "w") as archive:
@@ -59,10 +72,24 @@ class JapaneseTest(unittest.TestCase):
             ("jglue", "datasets/jsquad-v1.2/valid-v1.2.json"): json.dumps(jsquad(1), ensure_ascii=False),
             ("jmmlu", "JMMLU.zip"): jmmlu_zip({"history": [["年は？", "一", "二", "三", "四", "C"]],
                                                "physics": [["力は？", "甲", "乙", "丙", "丁", "A"]]}),
+            ("jemhopqa", "corpus/train.json"): json.dumps([{"question": f"問{n}は？", "answer": f"答{n}"}
+                                                           for n in range(100, 106)], ensure_ascii=False),
+            ("jemhopqa", "corpus/dev.json"): json.dumps([{"question": "二つのうち古いのは？", "answer": "甲"}],
+                                                        ensure_ascii=False),
+            ("niilc", "data/NIILC-ECQA2015_dev.xml"): niilc_xml([(f"問{n}は？", [f"答{n}"]) for n in range(100, 106)]),
+            ("niilc", "data/NIILC-ECQA2015_test.xml"): niilc_xml([("最初は？", ["東芝"]), ("二つは？", ["一", "二"]),
+                                                                   ("ないものは？", ["-"])]),
+            ("aio", "data/aio_02/aio_01_dev.jsonl"): lines({"question": f"問{n}は？", "answers": [f"答{n}"]}
+                                                          for n in range(100, 106)),
+            ("aio", "data/aio_02/aio_01_test.jsonl"): lines([{"question": "クイズは？", "answers": ["正解", "別解"]}]),
+            ("jamc_qa", "v1.0/dev-00000-of-00001.parquet"): b"",
+            ("jamc_qa", "v1.0/test-00000-of-00001.parquet"): b"",
         }
-        patcher = mock.patch.object(japanese, "fetch", self.fetch)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        self.jamc = {"dev": [jamc_row(n, 0) for n in range(100, 106)], "test": [jamc_row(1, 2)]}
+        for patcher in (mock.patch.object(japanese, "fetch", self.fetch),
+                        mock.patch.object(japanese, "parquet_rows", lambda path: self.jamc[path.name.split("-")[0]])):
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def fetch(self, source, path, raw, sources=None):
         local = self.directory / source / path
@@ -109,6 +136,25 @@ class JapaneseTest(unittest.TestCase):
         self.assertEqual(contexts[0].count("文脈："), 3)  # two examples of the training split, then the question
         self.assertNotIn("[SEP]", contexts[0])
 
+    def test_asks_a_question_for_its_short_answer_after_five_of_another_split(self):
+        for task, question, answer in ((japanese.jemhopqa, "二つのうち古いのは？", "甲"),
+                                       (japanese.aio, "クイズは？", "正解")):  # AIO's first answer
+            [(contexts, continuations, label, asked)] = task(self.directory)
+            self.assertEqual((continuations, label, asked), ([answer], 0, question))
+            self.assertTrue(contexts[0].endswith(f"\n\n質問：{question}\n回答："))
+            self.assertEqual(contexts[0].count("質問："), 6)  # five examples of the other split, then the question
+            self.assertIn("\n回答：答10", contexts[0])
+        # NIILC: the first of several answers, and no question that has none
+        asked = japanese.niilc(self.directory)
+        self.assertEqual([(question, continuations) for _, continuations, _, question in asked],
+                         [("最初は？", ["東芝"]), ("二つは？", ["一"])])
+
+    def test_asks_a_jamc_qa_question_of_each_of_its_four_answers(self):
+        [(contexts, continuations, label, question)] = japanese.jamc_qa(self.directory)
+        self.assertEqual((continuations, label, question), ([f"選1-{k}" for k in range(4)], 2, "日本の1は？"))
+        self.assertTrue(contexts[0].endswith("\n\n質問：日本の1は？\n回答："))
+        self.assertEqual(contexts[0].count("質問："), 6)
+
     def test_asks_each_jmmlu_subject_by_itself_without_examples(self):
         subjects = japanese.jmmlu(self.directory)
         self.assertEqual(sorted(subjects), ["history", "physics"])
@@ -117,8 +163,9 @@ class JapaneseTest(unittest.TestCase):
     def test_makes_an_artifact_whose_selection_reads_each_questions_correct_answer(self):
         artifact = japanese.make(self.directory / "out", self.directory)
         suites = json.loads((artifact / "suites.json").read_text())
-        self.assertEqual(suites["ja:bpb"], ["jcommonsenseqa:rc:bpb::ja", "jsquad:rc:bpb::ja", "kuci:rc:bpb::ja",
-                                            "xwinograd_ja:rc:bpb::ja", "jmmlu:rc:bpb::ja"])
+        self.assertEqual(suites["ja:bpb"], ["aio:rc:bpb::ja", "jamc_qa:rc:bpb::ja", "jcommonsenseqa:rc:bpb::ja",
+                                            "jemhopqa:rc:bpb::ja", "jsquad:rc:bpb::ja", "kuci:rc:bpb::ja",
+                                            "niilc:rc:bpb::ja", "xwinograd_ja:rc:bpb::ja", "jmmlu:rc:bpb::ja"])
         self.assertEqual(suites["jmmlu:rc:bpb::ja"], ["jmmlu_history:rc:bpb::ja", "jmmlu_physics:rc:bpb::ja"])
         selection = om.select(artifact, self.directory / "out", ["ja:bpb"])
         _, metrics, tasks = om.read_selection(selection)
@@ -126,7 +173,9 @@ class JapaneseTest(unittest.TestCase):
         answers = {alias: [question["pairs"][0][1] for question in asked] for alias, asked in tasks.items()}
         self.assertEqual(answers, {"jcommonsenseqa:rc:bpb::ja": ["答1-1", "答2-4"], "jsquad:rc:bpb::ja": ["答0"],
                                    "kuci:rc:bpb::ja": ["続き1c"], "xwinograd_ja:rc:bpb::ja": ["は速かった。"],
-                                   "jmmlu_history:rc:bpb::ja": ["三"], "jmmlu_physics:rc:bpb::ja": ["甲"]})
+                                   "jmmlu_history:rc:bpb::ja": ["三"], "jmmlu_physics:rc:bpb::ja": ["甲"],
+                                   "jemhopqa:rc:bpb::ja": ["甲"], "niilc:rc:bpb::ja": ["東芝", "一"],
+                                   "aio:rc:bpb::ja": ["正解"], "jamc_qa:rc:bpb::ja": ["選1-2"]})
         self.assertEqual(tasks["xwinograd_ja:rc:bpb::ja"][0]["pairs"][0][0], "犬は猫を追った。猫")
 
     def test_makes_the_same_artifact_from_the_same_files(self):

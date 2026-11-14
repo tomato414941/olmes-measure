@@ -17,11 +17,11 @@
   "text": "paloma-val-2b60e4850e11cb21"
  },
  "japanese": {
-  "requests": "requests-bd6beb5f2d3820f8",
+  "requests": "requests-5aaf7a5ee5708bc1",
   "suites": [
    "ja:bpb"
   ],
-  "selection": "selection-69567a7a04670dbb"
+  "selection": "selection-9ca4137e8a33ad76"
  },
  "japanese_text": {
   "split": "val",
@@ -39,7 +39,7 @@
     "val": "japanese-text-val-955cabb03efb4186",
     "test": "japanese-text-test-c5b6711e08274ad4"
    },
-   "artifact": "overlap-6c404b768d13f854"
+   "artifact": "overlap-619e4646774958b5"
   }
  },
  "categories": {
@@ -210,7 +210,15 @@
     "xwinograd_ja:rc:bpb::ja"
    ]
   },
-  "ja_knowledge": {
+  "ja_qa": {
+   "japanese": [
+    "jemhopqa:rc:bpb::ja",
+    "niilc:rc:bpb::ja",
+    "aio:rc:bpb::ja",
+    "jamc_qa:rc:bpb::ja"
+   ]
+  },
+  "ja_exams": {
    "japanese": [
     "jmmlu:rc:bpb::ja"
    ]
@@ -247,7 +255,8 @@
   ],
   "ja": [
    "ja_commonsense",
-   "ja_knowledge",
+   "ja_qa",
+   "ja_exams",
    "ja_reading",
    "ja_web",
    "ja_encyclopedia"

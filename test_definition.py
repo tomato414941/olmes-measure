@@ -42,7 +42,7 @@ class TwoLanguagesTest(unittest.TestCase):
             self.assertEqual(both[section], english[section])
         self.assertEqual({k: v for k, v in both["overlap"].items() if k != "japanese"}, english["overlap"])
         self.assertEqual(list(both["categories"])[:11], list(english["categories"]))
-        self.assertEqual({language: len(names) for language, names in both["languages"].items()}, {"en": 11, "ja": 5})
+        self.assertEqual({language: len(names) for language, names in both["languages"].items()}, {"en": 11, "ja": 6})
         self.assertEqual(both["compare"], "mean_rate_by_language")
         self.assertEqual(list(definition.members(both, "japanese_text")), ["ja_web", "ja_encyclopedia"])
 
