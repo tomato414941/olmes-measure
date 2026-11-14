@@ -15,6 +15,10 @@ A definition (definitions/NAME.json) says
   by the mean of each language's; a score improves as it falls (bits per byte) unless the definition says that a
   higher one is `better`, as the share of prompts whose instructions a model follows (instructions.py, `followed`).
 
+A comparison's standard errors (`compared`) come from two measurements item by item, each question's value, each
+document's bits and each prompt's result (`scored` makes the categories of one): how much the comparison varies as
+the items measured are drawn again.
+
 A definition is not edited once a result names it: a change is a new name. One that is `within` another measures a
 part of the other's data and says only what differs, so that the two agree on everything else and a result by the
 larger one can be compared on the part: OLMES's questions by olmes_measure.within, Paloma's text by reading the part.
@@ -30,6 +34,7 @@ import argparse
 import json
 from pathlib import Path
 
+import numpy as np
 import olmes_measure
 
 from . import japanese, japanese_text, overlap, paloma
@@ -198,23 +203,112 @@ def categories(definition):
     return tuple(definition["categories"])
 
 
+def rates(definition, scores, standing):
+    """Each category's rate of improvement of `scores` on `standing` ({category: score}, of every category): the fall
+    of the score, 1 - score / standing, or, when a higher score is `better`, its rise, score / standing - 1. Positive:
+    `scores` are the better."""
+    if definition.get("better") == "higher":
+        return {category: scores[category] / standing[category] - 1 for category in categories(definition)}
+    return {category: 1 - scores[category] / standing[category] for category in categories(definition)}
+
+
 def improvement(definition, scores, standing):
-    """By how much `scores` improve on `standing` ({category: score}, of every category): under the rule
-    `mean_rate`, the mean of the categories' rates of improvement, each counting equally; under
-    `mean_rate_by_language`, the mean of each language's mean of its categories' (`languages`: {language:
-    [category]}), so that each language counts equally however many categories it has. Positive: `scores` are the
-    better."""
-    higher = definition.get("better") == "higher"
-    rate = lambda category: (scores[category] / standing[category] - 1 if higher
-                             else 1 - scores[category] / standing[category])
+    """By how much `scores` improve on `standing` ({category: score}, of every category), from the categories' `rates`:
+    under the rule `mean_rate`, their mean, each counting equally; under `mean_rate_by_language`, the mean of each
+    language's mean of its categories' (`languages`: {language: [category]}), so that each language counts equally
+    however many categories it has. Positive: `scores` are the better."""
+    found = rates(definition, scores, standing)
     if definition["compare"] == "mean_rate":
-        return _mean(map(rate, categories(definition)))
+        return _mean(found.values())
     if definition["compare"] == "mean_rate_by_language":
         languages = definition["languages"]
         if sorted(c for names in languages.values() for c in names) != sorted(categories(definition)):
             raise ValueError("the languages do not hold every category once")
-        return _mean(_mean(map(rate, names)) for names in languages.values())
+        return _mean(_mean(found[category] for category in names) for names in languages.values())
     raise ValueError(f"no rule {definition['compare']}")
+
+
+def _arrays(items):
+    """A measurement's items, each kind's by what it scores (a task, a domain or a language), as (each item's value,
+    its size) in arrays: a question's or a prompt's value is of size one, a document's bits are of its bytes."""
+    arrays = {}
+    for kind, held in items.items():
+        if kind == "documents":
+            arrays[kind] = {name: tuple(np.array(each, dtype=float).reshape(-1, 2).T) for name, each in held.items()}
+        elif kind in ("questions", "prompts"):
+            arrays[kind] = {name: (np.array(each, dtype=float), np.ones(len(each))) for name, each in held.items()}
+        else:
+            raise ValueError(f"no items of the kind {kind}")
+    return arrays
+
+
+def _categorized(definition, groups, scores):
+    """Each category's score from the scores of what the items score, of each kind ({kind: {name: score}})."""
+    found = {}
+    if "questions" in scores:
+        found |= answered(definition, groups, scores["questions"])
+    if "documents" in scores:
+        found |= read(definition, scores["documents"])
+    if "prompts" in scores:
+        found |= followed(definition, scores["prompts"])
+    return {category: found[category] for category in categories(definition)}
+
+
+def scored(definition, items, groups=None):
+    """Each category's score from a model's measurement item by item: `items` holds, of what the definition measures,
+    {"questions": {task: [each question's value]}, "documents": {SOURCE/DOMAIN: [[each document's bits, its bytes]]},
+    "prompts": {language: [each prompt's result, 1 if its every instruction is followed]}}, and `groups` are those of
+    the selections whose tasks it holds. A task's score is the mean of its questions' values, a domain's the bits of
+    its documents over their bytes and a language's the mean of its prompts' results, from which `answered`, `read`
+    and `followed` make the categories."""
+    return _categorized(definition, groups, {
+        kind: {name: float(values.sum() / sizes.sum()) for name, (values, sizes) in held.items()}
+        for kind, held in _arrays(items).items()})
+
+
+def _resampled(generator, columns, draws):
+    """The sums of columns of the same items over `draws` resamples of the items, each drawn again as many times as
+    there are items, with replacement and the same for every column: an array of the draws' sums for each column."""
+    size = len(columns[0])
+    sums = [np.empty(draws) for _ in columns]
+    step = max(1, 2 ** 22 // size)  # draws at a time, so that their items' indices take at most 32 MB
+    for start in range(0, draws, step):
+        picked = generator.integers(0, size, (min(step, draws - start), size))
+        for total, column in zip(sums, columns):
+            total[start:start + len(picked)] = column[picked].sum(axis=1)
+    return sums
+
+
+def compared(definition, items, standing, groups=None, draws=1000, seed=0):
+    """How a model's measurement compares with another's of the same items (`items` and `standing`, as `scored` takes
+    them): the `improvement` and each category's rate (`rates`), with the standard error of each over `draws`
+    resamples of the items. A resample draws each task's questions, each domain's documents and each language's
+    prompts again, as many as it holds, with replacement and the same for both measurements, so that an error is of
+    the difference between the two on the same items: how much it varies with which items happen to be measured, and
+    not with how the models happen to be trained. A category whose score does not vary with the items, as one of a
+    single document (Paloma's PTB) does not, has no standard error (None), and adds nothing to the improvement's."""
+    ours, theirs = _arrays(items), _arrays(standing)
+    same = ours.keys() == theirs.keys() and all(
+        ours[kind].keys() == theirs[kind].keys()
+        and all(np.array_equal(ours[kind][name][1], theirs[kind][name][1]) for name in ours[kind]) for kind in ours)
+    if not same:
+        raise ValueError("the measurements are not of the same items")
+    generator = np.random.default_rng(seed)
+    drawn = {kind: {} for kind in ours}, {kind: {} for kind in ours}
+    for kind in sorted(ours):
+        for name in sorted(ours[kind]):
+            (values, sizes), (other_values, _) = ours[kind][name], theirs[kind][name]
+            first, second, size = _resampled(generator, (values, other_values, sizes), draws)
+            drawn[0][kind][name], drawn[1][kind][name] = first / size, second / size
+    resampled = [_categorized(definition, groups, scores) for scores in drawn]
+    varied = rates(definition, *resampled)
+    error = lambda found: float(np.std(found, ddof=1))
+    measured = scored(definition, items, groups), scored(definition, standing, groups)
+    return {"improvement": improvement(definition, *measured),
+            "standard_error": error(improvement(definition, *resampled)),
+            "categories": {category: {"rate": rate, "standard_error": error(varied[category]) if any(
+                np.ptp(scores[category]) > 0 for scores in resampled) else None}
+                for category, rate in rates(definition, *measured).items()}}
 
 
 def main():

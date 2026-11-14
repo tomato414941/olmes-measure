@@ -114,6 +114,62 @@ class ScoresTest(unittest.TestCase):
             definition.improvement(dict(TOY, compare="other"), candidate, standing)
 
 
+# A measurement of TOY item by item: each task's questions' values and each domain's documents' bits and bytes.
+ITEMS = {"questions": {"t1": [1.0, 3.0], "t2": [2.0], "t3": [4.0, 4.0, 4.0], "t4": [5.0, 7.0], "t5": [1.0],
+                       "t6": [2.0, 4.0]},
+         "documents": {"c4_en/c4_en": [[10.0, 10], [30.0, 10]], "c4_100_domains/1_a": [[6.0, 2]],
+                       "dolma-v1_5/common-crawl": [[5.0, 1], [10.0, 2]], "dolma-v1_5/books": [[70.0, 10]]}}
+
+
+def scaled(items, factor):
+    """The same items, each question's value and each document's bits `factor` times as large."""
+    return {"questions": {task: [value * factor for value in values] for task, values in items["questions"].items()},
+            "documents": {name: [[bits * factor, size] for bits, size in found]
+                          for name, found in items["documents"].items()}}
+
+
+class ComparedTest(unittest.TestCase):
+    def test_scores_a_category_from_its_items_as_from_its_tasks_and_domains(self):
+        tasks = {"t1": 2.0, "t2": 2.0, "t3": 4.0, "t4": 6.0, "t5": 1.0, "t6": 3.0}
+        domains = {"c4_en/c4_en": 2.0, "c4_100_domains/1_a": 3.0, "dolma-v1_5/common-crawl": 5.0,
+                   "dolma-v1_5/books": 7.0}
+        self.assertEqual(definition.scored(TOY, ITEMS, GROUPS),
+                         {**definition.answered(TOY, GROUPS, tasks), **definition.read(TOY, domains)})
+
+    def test_what_the_two_models_share_of_each_items_difficulty_does_not_vary_their_comparison(self):
+        found = definition.compared(TOY, scaled(ITEMS, 0.9), ITEMS, GROUPS)
+        self.assertAlmostEqual(found["improvement"], 0.1)
+        self.assertLess(found["standard_error"], 1e-12)
+        for category in ("science", "sums", "web"):
+            self.assertAlmostEqual(found["categories"][category]["rate"], 0.1)
+            self.assertLess(found["categories"][category]["standard_error"], 1e-12)
+
+    def test_an_error_is_of_how_the_difference_varies_over_the_items_and_the_same_each_time(self):
+        one = {"name": "one", "compare": "mean_rate", "better": "higher",
+               "categories": {"en": {"instructions": ["en"]}}}
+        model = {"prompts": {"en": [1, 0] * 200}}  # 400 prompts, half followed
+        standing = {"prompts": {"en": [0.5] * 400}}  # each followed half the times by chance
+        found = definition.compared(one, model, standing)
+        self.assertEqual(found["improvement"], 0)
+        # the share's standard error is 0.5 / sqrt(400), and the rate's that over the standing's 0.5
+        self.assertAlmostEqual(found["standard_error"], 0.05, delta=0.005)
+        self.assertEqual(found["categories"]["en"]["standard_error"], found["standard_error"])
+        self.assertEqual(definition.compared(one, model, standing), found)
+
+    def test_a_category_whose_score_does_not_vary_with_the_items_has_no_standard_error(self):
+        found = definition.compared(TOY, scaled(ITEMS, 0.5), ITEMS, GROUPS)
+        self.assertAlmostEqual(found["categories"]["books"]["rate"], 0.5)  # a single document
+        self.assertIsNone(found["categories"]["books"]["standard_error"])
+        self.assertIsNotNone(found["categories"]["web"]["standard_error"])
+
+    def test_measurements_of_other_items_do_not_compare(self):
+        fewer = {**ITEMS, "questions": {**ITEMS["questions"], "t1": [1.0]}}
+        larger = {**ITEMS, "documents": {**ITEMS["documents"], "dolma-v1_5/books": [[70.0, 11]]}}
+        for other in (fewer, larger, {"questions": ITEMS["questions"]}):
+            with self.assertRaisesRegex(ValueError, "same items"):
+                definition.compared(TOY, other, ITEMS, GROUPS)
+
+
 class MakeTest(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()

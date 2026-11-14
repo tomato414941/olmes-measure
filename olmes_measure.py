@@ -9,7 +9,8 @@ every request of some suites as a requests artifact. Everything here works from 
 - reserve: a selection of the questions that another selection does not hold, to be kept aside from decisions;
 - within: where a selection's questions stand in a larger one, so that a result on the larger scores the smaller;
 - rows: a selection's requests in a tokenizer, as OLMES's Hugging Face wrapper gives them to a model;
-- score: each task's and each suite's score, as OLMES computes them, from a model's logits on those rows.
+- score: each task's and each suite's score, as OLMES computes them, from a model's logits on those rows;
+- values: each question's value under its task's metric, of which the task's score is the mean.
 
 An artifact is a directory with manifest.json: what it was made from and the SHA-256 of each of its files. It is named
 by its kind and the start of the SHA-256 of its manifest, so that equal artifacts have equal names whoever made them.
@@ -374,10 +375,10 @@ def reader(logits, context, pad, device, batch_tokens=65536, most_rows=None):
     return read
 
 
-def task_score(metric, questions, totals, greedy, answers):
-    """A task's score under its primary metric, as OLMES's MCAccuracy computes it, from the log-likelihoods, the
-    greedy flags and the continuations' tokens of its questions' rows, in their order. Of equal scores the first
-    choice wins."""
+def question_values(metric, questions, totals, greedy, answers):
+    """Each question's value under its task's primary metric, as OLMES's MCAccuracy computes it before it averages
+    them, from the log-likelihoods, the greedy flags and the continuations' tokens of the questions' rows, in their
+    order. Of equal scores the first choice wins."""
     values, at = [], 0
     for question in questions:
         n = len(question["pairs"])
@@ -396,6 +397,12 @@ def task_score(metric, questions, totals, greedy, answers):
                   "acc_uncond": [total - without for total, without in zip(own, totals[at + n:at + 2 * n])]}[metric]
             values.append(float(by.index(max(by)) == question["label"]))
         at += n + len(question.get("uncond", []))
+    return values
+
+
+def task_score(metric, questions, totals, greedy, answers):
+    """A task's score under its primary metric: the mean of its questions' values."""
+    values = question_values(metric, questions, totals, greedy, answers)
     return sum(values) / len(values)
 
 
@@ -411,18 +418,26 @@ def suite_scores(groups, scores):
     return {name: mean_of(name) for name in groups if not any(name in members for members in groups.values())}
 
 
+def values(selection, read, made_rows):
+    """Each task's questions' values from a selection, its rows (encode_rows of its pairs, or read_rows of a rows
+    artifact) and a reader: {task: [value]}, the questions in the selection's order."""
+    _, metrics, tasks = read_selection(selection)
+    totals, greedy = read(made_rows)
+    answers = [answer for _, answer in made_rows]
+    found, at = {}, 0
+    for alias, asked in tasks.items():
+        size = sum(len(q["pairs"]) + len(q.get("uncond", [])) for q in asked)
+        found[alias] = question_values(metrics[alias], asked, totals[at:at + size], greedy[at:at + size],
+                                       answers[at:at + size])
+        at += size
+    return found
+
+
 def score(selection, read, made_rows):
     """Each task's score and each suite's from a selection, its rows (encode_rows of its pairs, or read_rows of a rows
     artifact) and a reader."""
-    groups, metrics, tasks = read_selection(selection)
-    totals, greedy = read(made_rows)
-    answers = [answer for _, answer in made_rows]
-    scores, at = {}, 0
-    for alias, asked in tasks.items():
-        size = sum(len(q["pairs"]) + len(q.get("uncond", [])) for q in asked)
-        scores[alias] = task_score(metrics[alias], asked, totals[at:at + size], greedy[at:at + size],
-                                   answers[at:at + size])
-        at += size
+    groups = json.loads((Path(selection) / "suites.json").read_text())
+    scores = {alias: sum(found) / len(found) for alias, found in values(selection, read, made_rows).items()}
     return scores, suite_scores(groups, scores)
 
 

@@ -2,10 +2,10 @@
 
 Paloma holds the validation and test text of 16 sources in 546 domains, published for evaluation. A domain's score is
 the bits per byte of its documents, each read by itself after a BOS token and, when it is longer than the context,
-in disjoint pieces (`pieces`, `rows`, `bits_per_byte`). `fetch` keeps the text of some sources and domains, a
-definition's members, as an artifact, and `part` takes a fixed part of one that leaves out no member and no domain,
-for a reader that cannot read all of it at every measurement. A member is a source, or SOURCE/DOMAIN for one domain of
-a source that mixes kinds (Dolma, RedPajama).
+in disjoint pieces (`pieces`, `rows`, `bits_per_byte`; `document_rows` keeps each document's rows apart). `fetch`
+keeps the text of some sources and domains, a definition's members, as an artifact, and `part` takes a fixed part of
+one that leaves out no member and no domain, for a reader that cannot read all of it at every measurement. A member is
+a source, or SOURCE/DOMAIN for one domain of a source that mixes kinds (Dolma, RedPajama).
 
 `part`: a member gives `member_bytes`, spread evenly over its domains, and a domain no less than `domain_bytes`. A
 domain gives its documents in their order, each from its beginning for the domain's bytes spread evenly over its
@@ -166,15 +166,23 @@ def pieces(tokens, context):
     return [(row, len(row) - 1) for row in rows]
 
 
-def rows(artifact, encode, bos, context):
-    """What a model of `context` tokens reads of an artifact, a domain at a time: (the domain's alias, its documents'
-    rows as `pieces` gives them). `encode` gives texts' tokens without special tokens."""
+def document_rows(artifact, encode, bos, context):
+    """What a model of `context` tokens reads of an artifact, a domain at a time and a document at a time: (the
+    domain's alias, [(a document's size in bytes, its rows as `pieces` gives them)]). `encode` gives texts' tokens
+    without special tokens."""
     for (source, name), paths in files(artifact).items():
         texts, found = list(documents(paths)), []
         for at in range(0, len(texts), 2048):  # a few thousand at a time, as olmes-measure encodes its rows
-            for tokens in encode(texts[at:at + 2048]):
-                found += pieces([bos, *tokens], context)
+            for text, tokens in zip(texts[at:at + 2048], encode(texts[at:at + 2048])):
+                found.append((len(text.encode("utf-8")), pieces([bos, *tokens], context)))
         yield f"{ALIAS}{source}/{name}", found
+
+
+def rows(artifact, encode, bos, context):
+    """What a model of `context` tokens reads of an artifact, a domain at a time: (the domain's alias, its documents'
+    rows as `pieces` gives them). `encode` gives texts' tokens without special tokens."""
+    for alias, found in document_rows(artifact, encode, bos, context):
+        yield alias, [row for _, made in found for row in made]
 
 
 def bits_per_byte(nats, size):

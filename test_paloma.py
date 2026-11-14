@@ -124,6 +124,11 @@ class ReadTest(PalomaTest):
                          [([0, 97, 98], 2), ([0, 99], 1), ([0, 100, 101, 102], 3), ([102, 103, 104], 2)])
         self.assertEqual(len(rows), len(paloma.members(CATEGORIES)))
         self.assertIn("paloma:dolma-v1_5/books", rows)
+        # document by document: each one's bytes and its own rows
+        documents = dict(paloma.document_rows(artifact, encode, 0, 3))
+        self.assertEqual(documents["paloma:c4_en/c4_en"],
+                         [(2, [([0, 97, 98], 2)]), (1, [([0, 99], 1)]),
+                          (5, [([0, 100, 101, 102], 3), ([102, 103, 104], 2)])])
 
     def test_scores_bits_per_byte_from_the_negative_log_likelihood_over_the_texts_bytes(self):
         self.assertAlmostEqual(paloma.bits_per_byte(-8 * math.log(2), 4), 2.0)

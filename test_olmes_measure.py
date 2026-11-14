@@ -288,8 +288,12 @@ def question(pairs, label=0, uncond=None):
 class ScoreTest(unittest.TestCase):
     def test_scores_bits_per_byte_as_the_mean_of_the_answers_bits(self):
         questions = [question([" ab"]), question([" é"])]
+        each = om.question_values("bits_per_byte_corr", questions, [-3.0, -1.5], [False, False], [1, 1])
+        self.assertEqual(len(each), 2)
+        for found, expected in zip(each, (om.LOG_2_OF_E * 3 / 3, om.LOG_2_OF_E * 1.5 / 3)):
+            self.assertAlmostEqual(found, expected)
         value = om.task_score("bits_per_byte_corr", questions, [-3.0, -1.5], [False, False], [1, 1])
-        self.assertAlmostEqual(value, (om.LOG_2_OF_E * 3 / 3 + om.LOG_2_OF_E * 1.5 / 3) / 2)
+        self.assertAlmostEqual(value, sum(each) / 2)
 
     def test_gives_equal_choices_to_the_first(self):
         self.assertEqual(om.task_score("acc_raw", [question([" a", " b"], label=0)], [-1.0, -1.0], [0, 0], [1, 1]), 1)
